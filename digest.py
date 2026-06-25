@@ -205,11 +205,11 @@ def send_email(html_content: str, text_content: str,
     通过 SMTP 发送邮件 — 完全手写原始 MIME，不依赖 Python email 模块做头编码。
     QQ 邮箱 SMTP 对 From 头校验极端严格，必须极简格式。
     """
-    smtp_server = os.environ.get("SMTP_SERVER", "")
-    smtp_port = int(os.environ.get("SMTP_PORT", "465"))
-    smtp_user = os.environ.get("SMTP_USER", "")
-    smtp_pass = os.environ.get("SMTP_PASS", "")
-    email_to = os.environ.get("EMAIL_TO", "")
+    smtp_server = os.environ.get("SMTP_SERVER", "").strip()
+    smtp_port = int(os.environ.get("SMTP_PORT", "465").strip())
+    smtp_user = os.environ.get("SMTP_USER", "").strip()
+    smtp_pass = os.environ.get("SMTP_PASS", "").strip()
+    email_to = os.environ.get("EMAIL_TO", "").strip()
 
     if not all([smtp_server, smtp_user, smtp_pass, email_to]):
         print("[邮件] ❌ 邮箱配置不完整，请检查环境变量")
@@ -220,6 +220,12 @@ def send_email(html_content: str, text_content: str,
     today_str = datetime.now().strftime("%Y-%m-%d")
     if subject is None:
         subject = f"[ClinicalPharm] Daily Digest {today_str}"
+
+    # 诊断：打印长度和字符检查，不打印邮箱内容（避免被 Actions 脱敏隐藏）
+    print(f"[诊断] smtp_user len={len(smtp_user)} has@={'@' in smtp_user}")
+    print(f"[诊断] email_to len={len(email_to)} has@={'@' in email_to}")
+    print(f"[诊断] smtp_pass len={len(smtp_pass)}")
+    print(f"[诊断] subject={subject}")
 
     # —— 手写 MIME 原始字符串 ——
     domain = smtp_user.split("@")[-1] if "@" in smtp_user else "localhost"
@@ -253,11 +259,10 @@ def send_email(html_content: str, text_content: str,
         f"--{boundary}--"
     )
 
-    # 打印原始邮件头用于调试
-    header_only = "\n".join(raw.split("\r\n")[:12])
-    print("[邮件] 前12行:")
-    for line in header_only.split("\n"):
-        print(f"  | {line}")
+    # 检查 raw 前 200 字节是否全 ASCII
+    from_line_pos = raw.index("From:")
+    crlf_pos = raw.index("\r\n", from_line_pos)
+    print(f"[诊断] From header bytes (hex): {raw[from_line_pos:crlf_pos].encode('ascii', errors='replace').hex()}")
 
     try:
         print(f"[邮件] 正在连接 {smtp_server}:{smtp_port} ...")
@@ -271,7 +276,15 @@ def send_email(html_content: str, text_content: str,
         server.set_debuglevel(1)
 
         server.login(smtp_user, smtp_pass)
-        # 显式编码为 ASCII bytes，彻底绕开 Python 的任何字符串处理
+
+        # ---- 极简测试：先发一封纯文本单行邮件 ----
+        test_msg = f"From: {smtp_user}\r\nTo: {email_to}\r\nSubject: SMTP Test\r\n\r\nhello"
+        print("[邮件] ① 发送极简测试邮件...")
+        server.sendmail(smtp_user, [email_to], test_msg.encode("ascii"))
+        print("[邮件] ① 极简测试通过！")
+
+        # ---- 正式邮件 ----
+        print("[邮件] ② 发送正式邮件...")
         raw_bytes = raw.encode("ascii")
         server.sendmail(smtp_user, [email_to], raw_bytes)
         server.quit()
