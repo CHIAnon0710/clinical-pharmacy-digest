@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
-  """
-  临床药理每日文献摘要 — 主入口
-  ==============================
-  1. 采集 → 2. 格式化 → 3. 发送邮件
-  """
+"""
+临床药理每日文献摘要 — 主入口
+==============================
+1. 采集 → 2. 格式化 → 3. 发送邮件
+"""
 
-  import os
-  import sys
-  import base64
-  import smtplib
-  from email.utils import formatdate
-  from datetime import datetime
-  from typing import Optional
+import os
+import sys
+import base64
+import smtplib
+from email.utils import formatdate
+from datetime import datetime
+from typing import Optional
 
-  from collect import get_latest_articles
-  from config import LOOKBACK_DAYS
+from collect import get_latest_articles
+from config import LOOKBACK_DAYS
 
 
   # ── 格式化 ──────────────────────────────────────────────────
 
-  def _format_impact_badge(if_val: float) -> str:
+def _format_impact_badge(if_val: float) -> str:
       if if_val >= 50:
           return "⭐⭐⭐⭐⭐"
       elif if_val >= 20:
@@ -34,7 +34,7 @@
           return ""
 
 
-  def _truncate_abstract(text: str, max_chars: int = 300) -> str:
+def _truncate_abstract(text: str, max_chars: int = 300) -> str:
       if len(text) <= max_chars:
           return text
       return text[:max_chars].rsplit(" ", 1)[0] + "..."
@@ -48,7 +48,7 @@
       return ", ".join(authors[:max_count]) + f" et al."
 
 
-  def build_html_digest(articles: list[dict]) -> str:
+def build_html_digest(articles: list[dict]) -> str:
       today_str = datetime.now().strftime("%Y-%m-%d")
       total = len(articles)
       if_ge_50 = sum(1 for a in articles if a["impact_factor"] >= 50)
