@@ -1,108 +1,82 @@
 name: 每日临床药理文献摘要
 
-# ── 触发时机 ─────────────────────────────────────────────────
 on:
-  # 每天北京时间 07:00 自动运行（UTC 23:00 前一天的）
-  schedule:
-    - cron: '0 23 * * *'    # UTC 23:00 = 北京时间 07:00（次日）
-    # 注：Action 的时区为 UTC，北京时间 = UTC + 8
-    # 如想改为 08:00，则 cron: '0 0 * * *'
+    schedule:
+      - cron: '0 23 * * *'
+    workflow_dispatch:
 
-  # 也支持手动触发（方便测试）
-  workflow_dispatch:
-
-# ── 权限 ────────────────────────────────────────────────────
 permissions:
-  contents: read
+    contents: read
 
-# ── 任务 ────────────────────────────────────────────────────
 jobs:
-  collect-and-send:
-    name: 采集文献并发送邮件
-    runs-on: ubuntu-latest
+    smtp-test:
+      name: SMTP 连通性测试
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-python@v5
+          with:
+            python-version: '3.11'
+        - name: 检查 Secrets 并测试 SMTP
+          env:
+            SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+            SMTP_PORT: ${{ secrets.SMTP_PORT }}
+            SMTP_USER: ${{ secrets.SMTP_USER }}
+            SMTP_PASS: ${{ secrets.SMTP_PASS }}
+            EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          run: |
+            python << 'PYEOF'
+            import os, sys, smtplib
 
-    steps:
-      - name: 检出代码
-        uses: actions/checkout@v4
+            srv = os.environ.get('SMTP_SERVER', '')
+            port = int(os.environ.get('SMTP_PORT', '465'))
+            usr = os.environ.get('SMTP_USER', '')
+            pwd = os.environ.get('SMTP_PASS', '')
+            to_ = os.environ.get('EMAIL_TO', '')
 
-      - name: 设置 Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
+            for k in ['SMTP_SERVER', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'EMAIL_TO']:
+                v = os.environ.get(k, '')
+                print(f'[CHECK] {k}: len={len(v)} first3={repr(v[:3]) if v else "EMPTY"}')
+                if not v.strip():
+                    print(f'[ERROR] {k} is empty!')
+                    sys.exit(1)
 
-      - name: 安装依赖
-        run: |
-          pip install --upgrade pip
+            print(f'[SMTP] connecting {srv}:{port} ...')
+            if port == 465:
+                s = smtplib.SMTP_SSL(srv, port, timeout=30)
+            else:
+                s = smtplib.SMTP(srv, port, timeout=30)
+                s.starttls()
+            s.set_debuglevel(1)
+            s.login(usr, pwd)
+            print('[SMTP] login OK')
 
-      - name: SMTP 纯连通性测试
-        env:
-          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASS: ${{ secrets.SMTP_PASS }}
-          EMAIL_TO: ${{ secrets.EMAIL_TO }}
-        run: |
-          python -c "
-          import os, sys, smtplib
+            raw = f'From: {usr}\r\nTo: {to_}\r\nSubject: SMTP-TEST\r\n\r\nhello'
+            s.sendmail(usr, [to_], raw.encode('ascii'))
+            s.quit()
+            print('[SMTP] ✅ test email sent!')
+            PYEOF
 
-          srv = os.environ.get('SMTP_SERVER', '')
-          port = int(os.environ.get('SMTP_PORT', '465'))
-          usr = os.environ.get('SMTP_USER', '')
-          pwd = os.environ.get('SMTP_PASS', '')
-          to_ = os.environ.get('EMAIL_TO', '')
-
-          # 1. 检查环境变量
-          ok = True
-          for k in ['SMTP_SERVER', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'EMAIL_TO']:
-              v = os.environ.get(k, '')
-              print(f'[检查] {k}: len={len(v)}, has={repr(v[:3]) if v else \"EMPTY\"}')
-              if not v.strip():
-                  print(f'[错误] {k} 未设置!')
-                  ok = False
-          if not ok:
-              print('[失败] Secrets 配置不完整')
-              sys.exit(1)
-
-          # 2. SMTP 连接测试
-          print(f'[SMTP] 连接 {srv}:{port} ...')
-          try:
-              if port == 465:
-                  s = smtplib.SMTP_SSL(srv, port, timeout=30)
-              else:
-                  s = smtplib.SMTP(srv, port, timeout=30)
-                  s.starttls()
-              s.set_debuglevel(1)
-              s.login(usr, pwd)
-              print('[SMTP] 登录成功')
-
-              # 3. 发送最简邮件
-              raw = f'From: {usr}\r\nTo: {to_}\r\nSubject: SMTP-OK\r\n\r\ntest-ok'
-              s.sendmail(usr, [to_], raw.encode('ascii'))
-              s.quit()
-              print('[SMTP] 极简邮件发送成功!')
-          except Exception as e:
-              print(f'[SMTP] 失败: {e}')
-              sys.exit(1)
-          "
-
-      - name: 运行文献采集与推送
-        env:
-          # ── 邮箱配置 ──
-          # 这些值通过 GitHub Secrets 传入
-          # 如何配置见 README.md
-          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USER: ${{ secrets.SMTP_USER }}
-          SMTP_PASS: ${{ secrets.SMTP_PASS }}
-          EMAIL_TO: ${{ secrets.EMAIL_TO }}
-          EMAIL_FROM_NAME: ${{ secrets.EMAIL_FROM_NAME }}
-
-          # ── PubMed API Key（可选） ──
-          NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
-        run: python digest.py
-
-      - name: 运行结果通知
-        if: failure()
-        run: |
-          echo "::warning::文献日报发送失败，请检查 Secrets 配置或 PubMed API 状态"
+    collect-and-send:
+      name: 采集文献并发送邮件
+      needs: smtp-test
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-python@v5
+          with:
+            python-version: '3.11'
+        - name: 运行文献采集与推送
+          env:
+            SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+            SMTP_PORT: ${{ secrets.SMTP_PORT }}
+            SMTP_USER: ${{ secrets.SMTP_USER }}
+            SMTP_PASS: ${{ secrets.SMTP_PASS }}
+            EMAIL_TO: ${{ secrets.EMAIL_TO }}
+            EMAIL_FROM_NAME: ${{ secrets.EMAIL_FROM_NAME }}
+            NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+          run: python digest.py
+        - name: 运行结果通知
+          if: failure()
+          run: |
+            echo "::warning::文献日报发送失败，请检查 Secrets 配置或 PubMed API 状态"
