@@ -42,19 +42,20 @@ jobs:
             SMTP_USER: ${{ secrets.SMTP_USER }}
             SMTP_PASS: ${{ secrets.SMTP_PASS }}
             EMAIL_TO: ${{ secrets.EMAIL_TO }}
-          run: |
-            python -c "
+        run: |
+            python << 'PYEOF'
             import os, sys, smtplib
+
             srv = os.environ.get('SMTP_SERVER', '')
             port = int(os.environ.get('SMTP_PORT', '465'))
             usr = os.environ.get('SMTP_USER', '')
             pwd = os.environ.get('SMTP_PASS', '')
             to_ = os.environ.get('EMAIL_TO', '')
 
-            # 检查 Secrets 是否真的设了
-            for k in ['SMTP_SERVER','SMTP_PORT','SMTP_USER','SMTP_PASS','EMAIL_TO']:
+            # 检查 Secrets
+            for k in ['SMTP_SERVER', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'EMAIL_TO']:
                 v = os.environ.get(k, '')
-                print(f'[检查] {k}: len={len(v)} has={repr(v[:3]) if v else \"EMPTY\"}')
+                print(f'[检查] {k}: len={len(v)} first3={repr(v[:3]) if v else "EMPTY"}')
                 if not v.strip():
                     print(f'[错误] {k} 未设置!')
                     sys.exit(1)
@@ -75,7 +76,7 @@ jobs:
             s.sendmail(usr, [to_], raw.encode('ascii'))
             s.quit()
             print('[SMTP] 极简邮件发送成功!')
-            "
+            PYEOF
       - name: 运行文献采集与推送
         env:
           # ── 邮箱配置 ──
