@@ -11,7 +11,7 @@ import smtplib
 from email.header import Header
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from email.utils import formatdate
+from email.utils import formataddr, formatdate
 from datetime import datetime
 from typing import Optional
 
@@ -225,13 +225,12 @@ def send_email(html_content: str, text_content: str,
 
     msg = MIMEMultipart("alternative")
     # QQ邮箱SMTP对From头格式要求严格，先用纯邮箱地址确保兼容
-    msg["From"] = smtp_user
+    msg["From"] = formataddr(("Clinical Pharm Digest", smtp_user))
     msg["To"] = email_to
     msg["Subject"] = Header(subject, "utf-8")
     msg["Date"] = formatdate(localtime=True)
-    msg["Message-ID"] = Header(
-        f"<clinical-pharm-digest.{datetime.now().strftime('%Y%m%d%H%M%S')}@{smtp_user.split('@')[-1]}>"
-    )
+    domain = smtp_user.split("@")[-1] if "@" in smtp_user else "localhost"
+    msg["Message-ID"] = f"<digest-{datetime.now().strftime('%Y%m%d%H%M%S%f')}@{domain}>"
 
     # 纯文本备用 + HTML 正文
     msg.attach(MIMEText(text_content, "plain", "utf-8"))
