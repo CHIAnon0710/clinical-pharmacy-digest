@@ -266,11 +266,20 @@ def send_email(html_content: str, text_content: str,
         else:
             server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
             server.starttls()
+
+        # 打开 SMTP 调试，打印完整对话
+        server.set_debuglevel(1)
+
         server.login(smtp_user, smtp_pass)
-        server.sendmail(smtp_user, [email_to], raw)
+        # 显式编码为 ASCII bytes，彻底绕开 Python 的任何字符串处理
+        raw_bytes = raw.encode("ascii")
+        server.sendmail(smtp_user, [email_to], raw_bytes)
         server.quit()
         print(f"[邮件] ✅ 已发送至 {email_to}")
         return True
+    except UnicodeError as e:
+        print(f"[邮件] ❌ 编码错误 (消息含有非ASCII字符): {e}")
+        return False
     except Exception as e:
         print(f"[邮件] ❌ 发送失败: {e}")
         return False
