@@ -194,109 +194,72 @@ def build_text_digest(articles: list[dict]) -> str:
 # ── 邮件发送 ────────────────────────────────────────────────
 
 def _fold_base64(data: str) -> str:
-    """将字符串做 base64 编码并按 76 字符分行"""
-    encoded = base64.b64encode(data.encode("utf-8")).decode("ascii")
-    return "\n".join(encoded[i:i + 76] for i in range(0, len(encoded), 76))
+      encoded = base64.b64encode(data.encode("utf-8")).decode("ascii")
+      return "\n".join(encoded[i:i + 76] for i in range(0, len(encoded), 76))
 
 
-def send_email(html_content: str, text_content: str,
-               subject: str = None) -> bool:
-    """
-    通过 SMTP 发送邮件 — 完全手写原始 MIME，不依赖 Python email 模块做头编码。
-    QQ 邮箱 SMTP 对 From 头校验极端严格，必须极简格式。
-    """
-    smtp_server = os.environ.get("SMTP_SERVER", "").strip()
-    smtp_port = int(os.environ.get("SMTP_PORT", "465").strip())
-    smtp_user = os.environ.get("SMTP_USER", "").strip()
-    smtp_pass = os.environ.get("SMTP_PASS", "").strip()
-    email_to = os.environ.get("EMAIL_TO", "").strip()
+  def send_email(html_content: str, text_content: str,
+                 subject: str = None) -> bool:
+      smtp_server = os.environ.get("SMTP_SERVER", "").strip()
+      smtp_port = int(os.environ.get("SMTP_PORT", "465").strip())
+      smtp_user = os.environ.get("SMTP_USER", "").strip()
+      smtp_pass = os.environ.get("SMTP_PASS", "").strip()
+      email_to = os.environ.get("EMAIL_TO", "").strip()
 
-    if not all([smtp_server, smtp_user, smtp_pass, email_to]):
-        print("[邮件] ❌ 邮箱配置不完整，请检查环境变量")
-        for k in ["SMTP_SERVER", "SMTP_USER", "SMTP_PASS", "EMAIL_TO"]:
-            print(f"    {k}={'OK' if os.environ.get(k) else 'MISSING'}")
-        return False
+      if not all([smtp_server, smtp_user, smtp_pass, email_to]):
+          print("[邮件] Secrets 不全")
+          return False
 
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    if subject is None:
-        subject = f"[ClinicalPharm] Daily Digest {today_str}"
+      today_str = datetime.now().strftime("%Y-%m-%d")
+      if subject is None:
+          subject = f"[ClinicalPharm] Daily Digest {today_str}"
 
-    # 诊断：打印长度和字符检查，不打印邮箱内容（避免被 Actions 脱敏隐藏）
-    print(f"[诊断] smtp_user len={len(smtp_user)} has@={'@' in smtp_user}")
-    print(f"[诊断] email_to len={len(email_to)} has@={'@' in email_to}")
-    print(f"[诊断] smtp_pass len={len(smtp_pass)}")
-    print(f"[诊断] subject={subject}")
+      domain = smtp_user.split("@")[-1] if "@" in smtp_user else "localhost"
+      ts = datetime.now().strftime("%Y%m%d%H%M%S%f")
+      boundary = f"==digest_{ts}=="
 
-    # —— 手写 MIME 原始字符串 ——
-    domain = smtp_user.split("@")[-1] if "@" in smtp_user else "localhost"
-    ts = datetime.now().strftime("%Y%m%d%H%M%S%f")
-    boundary = f"==digest_{ts}=="
+      text_b64 = _fold_base64(text_content)
+      html_b64 = _fold_base64(html_content)
 
-    text_b64 = _fold_base64(text_content)
-    html_b64 = _fold_base64(html_content)
+      raw = (
+          f"From: {smtp_user}\r\n"
+          f"To: {email_to}\r\n"
+          f"Subject: {subject}\r\n"
+          f"Date: {formatdate(localtime=True)}\r\n"
+          f"Message-ID: <digest.{ts}@{domain}>\r\n"
+          f"MIME-Version: 1.0\r\n"
+          f"Content-Type: multipart/alternative; boundary=\"{boundary}\"\r\n"
+          f"\r\n"
+          f"--{boundary}\r\n"
+          f"Content-Type: text/plain; charset=\"utf-8\"\r\n"
+          f"Content-Transfer-Encoding: base64\r\n"
+          f"\r\n"
+          f"{text_b64}\r\n"
+          f"\r\n"
+          f"--{boundary}\r\n"
+          f"Content-Type: text/html; charset=\"utf-8\"\r\n"
+          f"Content-Transfer-Encoding: base64\r\n"
+          f"\r\n"
+          f"{html_b64}\r\n"
+          f"\r\n"
+          f"--{boundary}--"
+      )
 
-    raw = (
-        f"From: {smtp_user}\r\n"
-        f"To: {email_to}\r\n"
-        f"Subject: {subject}\r\n"
-        f"Date: {formatdate(localtime=True)}\r\n"
-        f"Message-ID: <digest.{ts}@{domain}>\r\n"
-        f"MIME-Version: 1.0\r\n"
-        f"Content-Type: multipart/alternative; boundary=\"{boundary}\"\r\n"
-        f"\r\n"
-        f"--{boundary}\r\n"
-        f"Content-Type: text/plain; charset=\"utf-8\"\r\n"
-        f"Content-Transfer-Encoding: base64\r\n"
-        f"\r\n"
-        f"{text_b64}\r\n"
-        f"\r\n"
-        f"--{boundary}\r\n"
-        f"Content-Type: text/html; charset=\"utf-8\"\r\n"
-        f"Content-Transfer-Encoding: base64\r\n"
-        f"\r\n"
-        f"{html_b64}\r\n"
-        f"\r\n"
-        f"--{boundary}--"
-    )
-
-    # 检查 raw 前 200 字节是否全 ASCII
-    from_line_pos = raw.index("From:")
-    crlf_pos = raw.index("\r\n", from_line_pos)
-    print(f"[诊断] From header bytes (hex): {raw[from_line_pos:crlf_pos].encode('ascii', errors='replace').hex()}")
-
-    try:
-        print(f"[邮件] 正在连接 {smtp_server}:{smtp_port} ...")
-        if smtp_port == 465:
-            server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30)
-        else:
-            server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
-            server.starttls()
-
-        # 打开 SMTP 调试，打印完整对话
-        server.set_debuglevel(1)
-
-        server.login(smtp_user, smtp_pass)
-
-        # ---- 极简测试：先发一封纯文本单行邮件 ----
-        test_msg = f"From: {smtp_user}\r\nTo: {email_to}\r\nSubject: SMTP Test\r\n\r\nhello"
-        print("[邮件] ① 发送极简测试邮件...")
-        server.sendmail(smtp_user, [email_to], test_msg.encode("ascii"))
-        print("[邮件] ① 极简测试通过！")
-
-        # ---- 正式邮件 ----
-        print("[邮件] ② 发送正式邮件...")
-        raw_bytes = raw.encode("ascii")
-        server.sendmail(smtp_user, [email_to], raw_bytes)
-        server.quit()
-        print(f"[邮件] ✅ 已发送至 {email_to}")
-        return True
-    except UnicodeError as e:
-        print(f"[邮件] ❌ 编码错误 (消息含有非ASCII字符): {e}")
-        return False
-    except Exception as e:
-        print(f"[邮件] ❌ 发送失败: {e}")
-        return False
-
+      try:
+          if smtp_port == 465:
+              server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30)
+          else:
+              server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
+              server.starttls()
+          server.set_debuglevel(1)
+          server.login(smtp_user, smtp_pass)
+          server.sendmail(smtp_user, [email_to], raw.encode("ascii"))
+          server.quit()
+          print(f"[邮件] ✅ 已发送")
+          return True
+      except Exception as e:
+          print(f"[邮件] ❌ 发送失败: {e}")
+          return False
 
 # ── 主流程 ──────────────────────────────────────────────────
 
