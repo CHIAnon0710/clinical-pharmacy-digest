@@ -1,0 +1,57 @@
+name: 每日临床药理文献摘要
+
+# ── 触发时机 ─────────────────────────────────────────────────
+on:
+  # 每天北京时间 07:00 自动运行（UTC 23:00 前一天的）
+  schedule:
+    - cron: '0 23 * * *'    # UTC 23:00 = 北京时间 07:00（次日）
+    # 注：Action 的时区为 UTC，北京时间 = UTC + 8
+    # 如想改为 08:00，则 cron: '0 0 * * *'
+
+  # 也支持手动触发（方便测试）
+  workflow_dispatch:
+
+# ── 权限 ────────────────────────────────────────────────────
+permissions:
+  contents: read
+
+# ── 任务 ────────────────────────────────────────────────────
+jobs:
+  collect-and-send:
+    name: 采集文献并发送邮件
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: |
+          pip install --upgrade pip
+
+      - name: 运行文献采集与推送
+        env:
+          # ── 邮箱配置 ──
+          # 这些值通过 GitHub Secrets 传入
+          # 如何配置见 README.md
+          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          EMAIL_FROM_NAME: ${{ secrets.EMAIL_FROM_NAME }}
+
+          # ── PubMed API Key（可选） ──
+          NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+        run: python digest.py
+
+      - name: 运行结果通知
+        if: failure()
+        run: |
+          echo "::warning::文献日报发送失败，请检查 Secrets 配置或 PubMed API 状态"

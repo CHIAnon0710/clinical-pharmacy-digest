@@ -1,0 +1,6 @@
+# 临床药理每日文献摘要 - 依赖
+# 注意：本项目只使用 Python 标准库，无需额外依赖
+# 所有功能基于：urllib, xml.etree, smtplib, email, json
+#
+# 此文件保留以确保 pip install 兼容性
+# 实际运行不需要 pip install
