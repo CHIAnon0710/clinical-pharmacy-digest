@@ -11,6 +11,7 @@ import smtplib
 from email.header import Header
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import formatdate
 from datetime import datetime
 from typing import Optional
 
@@ -227,6 +228,10 @@ def send_email(html_content: str, text_content: str,
     msg["From"] = smtp_user
     msg["To"] = email_to
     msg["Subject"] = Header(subject, "utf-8")
+    msg["Date"] = formatdate(localtime=True)
+    msg["Message-ID"] = Header(
+        f"<clinical-pharm-digest.{datetime.now().strftime('%Y%m%d%H%M%S')}@{smtp_user.split('@')[-1]}>"
+    )
 
     # 纯文本备用 + HTML 正文
     msg.attach(MIMEText(text_content, "plain", "utf-8"))
