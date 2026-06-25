@@ -8,8 +8,11 @@
 import os
 import sys
 import smtplib
+from email import charset as email_charset
+from email.header import Header
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import formataddr
 from datetime import datetime
 from typing import Optional
 
@@ -219,13 +222,15 @@ def send_email(html_content: str, text_content: str,
     # 构建邮件
     today_str = datetime.now().strftime("%Y-%m-%d")
     if subject is None:
-        subject = f"📋 临床药理文献日报 — {today_str}"
+        subject = f"[Clinical Pharm] Daily Digest — {today_str}"
 
-    # 从总文献数附加头信息
-    msg = MIMEMultipart("alternative")
-    msg["From"] = f"{email_from_name} <{smtp_user}>"
+    # 使用 formataddr + Header 确保 RFC2047 兼容中文/特殊字符
+    msg = MIMEMultipart("alternative", _charset="utf-8")
+    msg["From"] = formataddr(
+        (str(Header(email_from_name, "utf-8")), smtp_user)
+    )
     msg["To"] = email_to
-    msg["Subject"] = subject
+    msg["Subject"] = Header(subject, "utf-8")
 
     # 纯文本备用 + HTML 正文
     msg.attach(MIMEText(text_content, "plain", "utf-8"))
