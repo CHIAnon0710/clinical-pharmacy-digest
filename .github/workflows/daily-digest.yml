@@ -35,6 +35,47 @@ jobs:
         run: |
           pip install --upgrade pip
 
+      - name: SMTP 纯连通性测试
+        env:
+            SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+            SMTP_PORT: ${{ secrets.SMTP_PORT }}
+            SMTP_USER: ${{ secrets.SMTP_USER }}
+            SMTP_PASS: ${{ secrets.SMTP_PASS }}
+            EMAIL_TO: ${{ secrets.EMAIL_TO }}
+          run: |
+            python -c "
+            import os, sys, smtplib
+            srv = os.environ.get('SMTP_SERVER', '')
+            port = int(os.environ.get('SMTP_PORT', '465'))
+            usr = os.environ.get('SMTP_USER', '')
+            pwd = os.environ.get('SMTP_PASS', '')
+            to_ = os.environ.get('EMAIL_TO', '')
+
+            # 检查 Secrets 是否真的设了
+            for k in ['SMTP_SERVER','SMTP_PORT','SMTP_USER','SMTP_PASS','EMAIL_TO']:
+                v = os.environ.get(k, '')
+                print(f'[检查] {k}: len={len(v)} has={repr(v[:3]) if v else \"EMPTY\"}')
+                if not v.strip():
+                    print(f'[错误] {k} 未设置!')
+                    sys.exit(1)
+
+            # 连接 SMTP
+            print(f'[SMTP] 连接 {srv}:{port} ...')
+            if port == 465:
+                s = smtplib.SMTP_SSL(srv, port, timeout=30)
+            else:
+                s = smtplib.SMTP(srv, port, timeout=30)
+                s.starttls()
+            s.set_debuglevel(1)
+            s.login(usr, pwd)
+            print('[SMTP] 登录成功')
+
+            # 发送极简邮件
+            raw = f'From: {usr}\r\nTo: {to_}\r\nSubject: SMTP-OK\r\n\r\ntest-ok'
+            s.sendmail(usr, [to_], raw.encode('ascii'))
+            s.quit()
+            print('[SMTP] 极简邮件发送成功!')
+            "
       - name: 运行文献采集与推送
         env:
           # ── 邮箱配置 ──
