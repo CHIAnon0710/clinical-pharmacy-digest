@@ -7,9 +7,11 @@
 
 import os
 import sys
-import base64
 import smtplib
-from email.utils import formatdate
+from email.header import Header
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.utils import formataddr, formatdate
 from datetime import datetime
 from typing import Optional
 
@@ -193,12 +195,6 @@ def build_text_digest(articles: list[dict]) -> str:
 
 # ── 邮件发送 ────────────────────────────────────────────────
 
-def _wrap_base64(data: str, width: int = 76) -> str:
-    """将字符串按指定宽度换行，模拟 MIME base64 行折叠"""
-    encoded = base64.b64encode(data.encode("utf-8")).decode("ascii")
-    return "\r\n".join(encoded[i:i + width] for i in range(0, len(encoded), width))
-
-
 def send_email(html_content: str, text_content: str,
                subject: str = None) -> bool:
     """
@@ -212,7 +208,7 @@ def send_email(html_content: str, text_content: str,
     smtp_user = os.environ.get("SMTP_USER", "")
     smtp_pass = os.environ.get("SMTP_PASS", "")
     email_to = os.environ.get("EMAIL_TO", "")
-    email_from_name = os.environ.get("EMAIL_FROM_NAME", "Clinical Pharm Digest")
+    email_from_name = os.environ.get("EMAIL_FROM_NAME", "临床药理文献日报")
 
     if not all([smtp_server, smtp_user, smtp_pass, email_to]):
         print("[邮件] ❌ 邮箱配置不完整，请检查环境变量")
@@ -222,82 +218,42 @@ def send_email(html_content: str, text_content: str,
         print(f"    EMAIL_TO={'已设置' if email_to else '未设置'}")
         return False
 
+    # 构建邮件
     today_str = datetime.now().strftime("%Y-%m-%d")
     if subject is None:
-        subject = f"[Clinical Pharm] Daily Digest - {today_str}"
+        subject = f"[Clinical Pharm] Daily Digest — {today_str}"
 
-    print(f"[邮件] From: {smtp_user}")
-    print(f"[邮件] To: {email_to}")
-    print(f"[邮件] Subject: {subject}")
-
-    # ——— 手写原始 MIME 邮件 — QQ 邮箱 SMTP 严格校验，绕开 Python email 模块的 From 编码 ———
+    msg = MIMEMultipart("alternative")
+    # QQ邮箱SMTP对From头格式要求严格，先用纯邮箱地址确保兼容
+    msg["From"] = formataddr(("Clinical Pharm Digest", smtp_user))
+    msg["To"] = email_to
+    msg["Subject"] = Header(subject, "utf-8")
+    msg["Date"] = formatdate(localtime=True)
     domain = smtp_user.split("@")[-1] if "@" in smtp_user else "localhost"
-    time_id = datetime.now().strftime("%Y%m%d%H%M%S%f")
-    boundary = f"====digest_bnd_{time_id}===="
+    msg["Message-ID"] = f"<digest-{datetime.now().strftime('%Y%m%d%H%M%S%f')}@{domain}>"
 
-    text_b64 = _wrap_base64(text_content)
-    html_b64 = _wrap_base64(html_content)
-
-    # 形如: From: Clinical-Pharm-Digest <user@qq.com>（纯 ASCII，无引号，不触发任何编码）
-    from_line = f"{email_from_name} <{smtp_user}>"
-
-    raw_msg = f"""From: {from_line}
-To: {email_to}
-Subject: {subject}
-Date: {formatdate(localtime=True)}
-Message-ID: <digest.{time_id}@{domain}>
-MIME-Version: 1.0
-Content-Type: multipart/alternative; boundary="{boundary}"
-Content-Transfer-Encoding: 7bit
-
---{boundary}
-Content-Type: text/plain; charset="utf-8"
-Content-Transfer-Encoding: base64
-
-{text_b64}
-
---{boundary}
-Content-Type: text/html; charset="utf-8"
-Content-Transfer-Encoding: base64
-
-{html_b64}
-
---{boundary}--
-"""
-
-    print(f"[邮件] 原始邮件头 (前15行):")
-    for line in raw_msg.split("\n")[:15]:
-        print(f"  | {line.rstrip()}")
+    # 纯文本备用 + HTML 正文
+    msg.attach(MIMEText(text_content, "plain", "utf-8"))
+    msg.attach(MIMEText(html_content, "html", "utf-8"))
 
     try:
         print(f"[邮件] 正在连接 {smtp_server}:{smtp_port} ...")
 
+        # SSL 方式（端口 465）
         if smtp_port == 465:
             server = smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=30)
         else:
+            # STARTTLS 方式（端口 587）
             server = smtplib.SMTP(smtp_server, smtp_port, timeout=30)
             server.starttls()
 
         server.login(smtp_user, smtp_pass)
-        # sendmail 的 envelope from 直接用纯邮箱地址，完全不会触犯 QQ 的 From 校验
-        server.sendmail(smtp_user, [email_to], raw_msg.encode("utf-8"))
+        server.sendmail(smtp_user, [email_to], msg.as_string())
         server.quit()
 
         print(f"[邮件] ✅ 邮件已发送至 {email_to}")
         return True
 
-    except smtplib.SMTPRecipientsRefused as e:
-        print(f"[邮件] ❌ 收件人被拒: {e}")
-        return False
-    except smtplib.SMTPSenderRefused as e:
-        print(f"[邮件] ❌ 发件人被拒: {e}")
-        return False
-    except smtplib.SMTPDataError as e:
-        print(f"[邮件] ❌ SMTP 数据错误: {e}")
-        return False
-    except smtplib.SMTPException as e:
-        print(f"[邮件] ❌ SMTP 异常: {e}")
-        return False
     except Exception as e:
         print(f"[邮件] ❌ 发送失败: {e}")
         return False
