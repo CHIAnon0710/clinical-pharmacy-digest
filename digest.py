@@ -1,7 +1,7 @@
 """
-Clinical Pharm Daily Digest
-============================
-1. collect -> 2. format -> 3. email
+Clinical Pharm Daily Digest / 临床药理文献日报
+================================================
+1. collect / 采集 -> 2. format / 格式化 -> 3. email / 发送邮件
 """
 
 import os
@@ -15,18 +15,18 @@ from collect import get_latest_articles
 from config import LOOKBACK_DAYS
 
 
-def _format_impact_badge(if_val):
+def _impact_level(if_val):
     if if_val >= 50:
-        return "[5*]"
+        return "SSS", "顶刊"
     elif if_val >= 20:
-        return "[4*]"
+        return "SS", "权威"
     elif if_val >= 10:
-        return "[3*]"
+        return "S", "一流"
     elif if_val >= 5:
-        return "[2*]"
+        return "A", "优秀"
     elif if_val >= 3:
-        return "[1*]"
-    return ""
+        return "B", "良好"
+    return "", ""
 
 
 def _truncate_abstract(text, max_chars=300):
@@ -51,9 +51,10 @@ def build_html_digest(articles):
 
     cards = []
     for a in articles:
-        badge = _format_impact_badge(a["impact_factor"])
+        tier, tier_cn = _impact_level(a["impact_factor"])
         authors_str = _format_authors(a["authors"])
         abstract_short = _truncate_abstract(a["abstract"])
+
         pub_type_badges = ""
         for pt in a["pub_types"][:3]:
             pub_type_badges += (
@@ -70,26 +71,27 @@ def build_html_digest(articles):
         card = (
             '<div style="background:#fff;border:1px solid #e0e0e0;'
             'border-radius:12px;padding:16px;margin-bottom:16px;">'
-            '<div style="display:flex;justify-content:space-between;">'
+            '<div style="display:flex;justify-content:space-between;align-items:center;">'
             f'<span style="background:#1a73e8;color:#fff;font-size:11px;'
-            f'padding:3px 10px;border-radius:10px;">IF:{a["impact_factor"]:.1f}</span>'
-            f'<span>{badge}</span></div>'
-            f'<div style="font-size:13px;color:#555;">{a["journal"]}</div>'
-            f'<h3 style="font-size:16px;"><a href="{a["url"]}" '
-            f'style="color:#1a0dab;">{a["title"]}</a></h3>'
+            f'padding:3px 10px;border-radius:10px;">IF {a["impact_factor"]:.1f}</span>'
+            f'<span style="font-size:14px;color:#e67e22;">{tier} {tier_cn}</span></div>'
+            f'<div style="font-size:13px;color:#555;margin-top:8px;">{a["journal"]}</div>'
+            f'<h3 style="font-size:16px;margin:8px 0;"><a href="{a["url"]}" '
+            f'style="color:#1a0dab;text-decoration:none;">{a["title"]}</a></h3>'
             f'<div style="font-size:12px;color:#777;">{authors_str}</div>'
-            f'{pub_type_badges}'
+            f'<div style="margin:8px 0;">{pub_type_badges}</div>'
             f'<div style="font-size:13px;color:#444;padding-top:8px;'
             f'border-top:1px solid #eee;">{abstract_short}</div>'
-            f'<div style="font-size:12px;">{doi_link} '
-            f'<span style="color:#999;">PMID:{a["pmid"]}</span></div></div>'
+            f'<div style="font-size:12px;margin-top:6px;">{doi_link} '
+            f'<span style="color:#999;">PMID: {a["pmid"]}</span></div></div>'
         )
         cards.append(card)
 
     articles_html = "\n".join(cards)
     no_articles = (
-        '<div style="text-align:center;padding:40px;color:#888;">'
-        'No new articles today</div>'
+        '<div style="text-align:center;padding:40px;color:#888;font-size:15px;">'
+        'No new articles today / 今日暂无新文献<br>'
+        '<span style="font-size:13px;">(周末或节假日更新较少)</span></div>'
     )
 
     html = (
@@ -97,24 +99,43 @@ def build_html_digest(articles):
         '<meta name="viewport" content="width=device-width,initial-scale=1.0">'
         '</head><body style="margin:0;padding:0;background:#f5f5f5;">'
         '<div style="max-width:640px;margin:0 auto;">'
+
+        # Header
         '<div style="background:linear-gradient(135deg,#1a73e8,#0d47a1);'
         'padding:32px 20px;border-radius:0 0 24px 24px;color:#fff;text-align:center;">'
-        '<h1 style="font-size:24px;">Clinical Pharm Daily Digest</h1>'
-        f'<p style="font-size:14px;">{today_str}</p>'
-        '<p style="font-size:13px;opacity:0.8;">High-Impact Journals</p></div>'
+        '<h1 style="font-size:24px;margin:0;">Clinical Pharm Daily Digest</h1>'
+        '<h2 style="font-size:20px;margin:4px 0;font-weight:400;">临床药理文献日报</h2>'
+        f'<p style="font-size:14px;opacity:0.9;margin:12px 0 4px;">{today_str}</p>'
+        '<p style="font-size:13px;opacity:0.8;margin:2px 0;">'
+        'High-Impact Journals · Latest Articles</p>'
+        '<p style="font-size:13px;opacity:0.8;margin:2px 0;">'
+        '高影响因子期刊 · 新近发表</p></div>'
+
+        # Stats
         '<div style="display:flex;justify-content:space-around;margin:20px 8px;'
-        'background:#fff;border-radius:12px;padding:16px;">'
+        'background:#fff;border-radius:12px;padding:16px;box-shadow:0 1px 3px rgba(0,0,0,0.06);">'
         f'<div style="text-align:center;"><div style="font-size:28px;font-weight:700;'
-        f'color:#1a73e8;">{total}</div><div style="font-size:12px;color:#888;">Total</div></div>'
+        f'color:#1a73e8;">{total}</div><div style="font-size:12px;color:#888;">'
+        f'总文献<br>Total</div></div>'
         f'<div style="text-align:center;"><div style="font-size:28px;font-weight:700;'
-        f'color:#e67e22;">{if_ge_50}</div><div style="font-size:12px;color:#888;">IF>=50</div></div>'
+        f'color:#e67e22;">{if_ge_50}</div><div style="font-size:12px;color:#888;">'
+        f'IF &ge; 50<br>顶刊</div></div>'
         f'<div style="text-align:center;"><div style="font-size:28px;font-weight:700;'
-        f'color:#27ae60;">{if_ge_20}</div><div style="font-size:12px;color:#888;">IF>=20</div></div>'
-        f'</div><div style="padding:0 8px 20px;">'
-        f'{articles_html if articles_html else no_articles}'
-        f'</div><div style="text-align:center;padding:20px;font-size:11px;color:#aaa;">'
-        f'<p>Source: PubMed (NCBI) · {datetime.now().strftime("%Y-%m-%d %H:%M")}</p>'
-        f'<p>Last {LOOKBACK_DAYS} days</p></div></div></body></html>'
+        f'color:#27ae60;">{if_ge_20}</div><div style="font-size:12px;color:#888;">'
+        f'IF &ge; 20<br>权威</div></div>'
+        '</div>'
+
+        # Articles
+        f'<div style="padding:0 8px 20px;">'
+        f'{articles_html if articles_html else no_articles}</div>'
+
+        # Footer
+        '<div style="text-align:center;padding:20px;font-size:11px;color:#aaa;">'
+        f'<p>Source: PubMed (NCBI) · Generated at {datetime.now().strftime("%Y-%m-%d %H:%M")} UTC</p>'
+        f'<p>数据来源：PubMed (NCBI) · 涵盖近 {LOOKBACK_DAYS} 天发表的文章</p>'
+        '<p style="margin-top:12px;">Daily Auto Digest / 每日自动推送</p>'
+        '<p style="font-size:10px;">Clinical Pharm Digest v1.0</p></div>'
+        '</div></body></html>'
     )
     return html
 
@@ -122,29 +143,31 @@ def build_html_digest(articles):
 def build_text_digest(articles):
     lines = [
         "=" * 60,
-        f"Clinical Pharm Daily Digest -- {datetime.now().strftime('%Y-%m-%d')}",
+        "  Clinical Pharm Daily Digest / 临床药理文献日报",
+        f"  {datetime.now().strftime('%Y-%m-%d')}",
         "=" * 60,
         "",
     ]
     if not articles:
-        lines.append("No new articles today.\n")
+        lines.append("  No new articles today / 今日暂无新文献\n")
     for i, a in enumerate(articles, 1):
-        badge = _format_impact_badge(a["impact_factor"])
+        tier, tier_cn = _impact_level(a["impact_factor"])
         authors_str = _format_authors(a["authors"])
         lines.append(f"{'-' * 50}")
-        lines.append(f"[{i}] {badge} IF: {a['impact_factor']:.1f}")
-        lines.append(f"    Journal: {a['journal']}")
-        lines.append(f"    Title: {a['title']}")
-        lines.append(f"    Authors: {authors_str}")
-        lines.append(f"    PMID: {a['pmid']}")
+        lines.append(f"  [{i}] {tier} {tier_cn}  |  IF: {a['impact_factor']:.1f}")
+        lines.append(f"  Journal / 期刊 : {a['journal']}")
+        lines.append(f"  Title  / 标题  : {a['title']}")
+        lines.append(f"  Authors/ 作者  : {authors_str}")
+        lines.append(f"  PMID   : {a['pmid']}")
         if a.get("doi"):
-            lines.append(f"    DOI: {a['doi']}")
-        lines.append(f"    Link: {a['url']}")
+            lines.append(f"  DOI    : {a['doi']}")
+        lines.append(f"  Link   : {a['url']}")
         if a.get("abstract"):
-            lines.append(f"    Abstract: {_truncate_abstract(a['abstract'], 200)}")
+            lines.append(f"  Abstract: {_truncate_abstract(a['abstract'], 200)}")
         lines.append("")
     lines.append("=" * 60)
-    lines.append(f"Source: PubMed · {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    lines.append(f"  PubMed (NCBI) · {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    lines.append("  Clinical Pharm Digest v1.0")
     return "\n".join(lines)
 
 
@@ -166,7 +189,7 @@ def send_email(html_content, text_content, subject=None):
 
     today_str = datetime.now().strftime("%Y-%m-%d")
     if subject is None:
-        subject = f"[ClinicalPharm] Daily Digest {today_str}"
+        subject = f"[ClinicalPharm] Daily Digest / 临床药理日报 {today_str}"
 
     domain = smtp_user.split("@")[-1] if "@" in smtp_user else "localhost"
     ts = datetime.now().strftime("%Y%m%d%H%M%S%f")
@@ -217,7 +240,7 @@ def send_email(html_content, text_content, subject=None):
 
 def main(debug_query=None, dry_run=False):
     print("=" * 60)
-    print("Clinical Pharm Daily Digest - START")
+    print("Clinical Pharm Daily Digest / 临床药理文献日报")
     print("=" * 60)
 
     try:
@@ -227,14 +250,14 @@ def main(debug_query=None, dry_run=False):
         return 1
 
     if articles:
-        print(f"[summary] {len(articles)} articles")
+        print(f"[summary] {len(articles)} articles / 篇文献")
         hi = articles[0]["impact_factor"]
         lo = articles[-1]["impact_factor"]
         print(f"         IF range: {hi:.1f} - {lo:.1f}")
         for i, a in enumerate(articles[:5], 1):
             print(f"         {i}. [{a['impact_factor']:.1f}] {a['title'][:60]}...")
     else:
-        print("[summary] no new articles")
+        print("[summary] no new articles / 无新文献")
 
     html_content = build_html_digest(articles)
     text_content = build_text_digest(articles)
@@ -247,19 +270,19 @@ def main(debug_query=None, dry_run=False):
         print(f"HTML length: {len(html_content)} chars")
         return 0
     else:
-        print("[send] sending email...")
+        print("[send] sending email / 正在发送...")
         success = send_email(html_content, text_content)
         if success:
-            print("[done] daily digest sent")
+            print("[done] daily digest sent / 日报已发送")
             return 0
         else:
-            print("[fail] email send failed")
+            print("[fail] email send failed / 发送失败")
             return 1
 
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Clinical Pharm Daily Digest")
+    parser = argparse.ArgumentParser(description="临床药理文献日报")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--query", type=str, default=None)
     args = parser.parse_args()
