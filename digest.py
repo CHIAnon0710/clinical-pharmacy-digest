@@ -6,9 +6,12 @@
 """
 
 import os
+import re
 import sys
 import smtplib
+from email import policy
 from email.header import Header
+from email.message import EmailMessage
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.utils import formatdate
@@ -218,24 +221,33 @@ def send_email(html_content: str, text_content: str,
         print(f"    EMAIL_TO={'已设置' if email_to else '未设置'}")
         return False
 
-    # 构建邮件
+    # 构建邮件 — 使用 EmailMessage + policy.SMTP 保证严格 RFC 合规
     today_str = datetime.now().strftime("%Y-%m-%d")
     if subject is None:
         subject = f"[Clinical Pharm] Daily Digest — {today_str}"
 
-    msg = MIMEMultipart("alternative")
-    # QQ邮箱SMTP对From头格式要求严格，先用纯邮箱地址确保兼容
+    # 先发 debug 日志：打印完整的邮件头供排查
+    print(f"[邮件] From: {smtp_user}")
+    print(f"[邮件] To: {email_to}")
+    print(f"[邮件] Subject: {subject}")
+
+    # EmailMessage(policy=policy.SMTP) 自动处理 RFC 编码
+    msg = EmailMessage(policy=policy.SMTP)
     msg["From"] = smtp_user
     msg["To"] = email_to
-    msg["Subject"] = Header(subject, "utf-8")
+    msg["Subject"] = subject
     msg["Date"] = formatdate(localtime=True)
-    msg["Message-ID"] = Header(
-        f"<clinical-pharm-digest.{datetime.now().strftime('%Y%m%d%H%M%S')}@{smtp_user.split('@')[-1]}>"
-    )
+    domain = smtp_user.split("@")[-1] if "@" in smtp_user else "localhost"
+    msg["Message-ID"] = f"<digest-{datetime.now().strftime('%Y%m%d%H%M%S%f')}@{domain}>"
+    msg.set_content(text_content)
+    msg.add_alternative(html_content, subtype="html")
 
-    # 纯文本备用 + HTML 正文
-    msg.attach(MIMEText(text_content, "plain", "utf-8"))
-    msg.attach(MIMEText(html_content, "html", "utf-8"))
+    # 打印原始邮件头用于调试
+    raw = msg.as_string()
+    header_only = "\n".join(raw.split("\n")[:20])
+    print(f"[邮件] 原始邮件头 (前20行):")
+    for line in header_only.split("\n"):
+        print(f"  | {line}")
 
     try:
         print(f"[邮件] 正在连接 {smtp_server}:{smtp_port} ...")
@@ -249,12 +261,24 @@ def send_email(html_content: str, text_content: str,
             server.starttls()
 
         server.login(smtp_user, smtp_pass)
-        server.sendmail(smtp_user, [email_to], msg.as_string())
+        server.send_message(msg)
         server.quit()
 
         print(f"[邮件] ✅ 邮件已发送至 {email_to}")
         return True
 
+    except smtplib.SMTPRecipientsRefused as e:
+        print(f"[邮件] ❌ 收件人被拒: {e}")
+        return False
+    except smtplib.SMTPSenderRefused as e:
+        print(f"[邮件] ❌ 发件人被拒: {e}")
+        return False
+    except smtplib.SMTPDataError as e:
+        print(f"[邮件] ❌ SMTP 数据错误: {e}")
+        return False
+    except smtplib.SMTPException as e:
+        print(f"[邮件] ❌ SMTP 异常: {e}")
+        return False
     except Exception as e:
         print(f"[邮件] ❌ 发送失败: {e}")
         return False
