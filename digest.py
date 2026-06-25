@@ -191,6 +191,10 @@ def send_email(html_content, text_content, subject=None):
     if subject is None:
         subject = f"[ClinicalPharm] Daily Digest / 临床药理日报 {today_str}"
 
+    # RFC2047 encode Subject (required for non-ASCII chars in email headers)
+    subject_encoded = base64.b64encode(subject.encode("utf-8")).decode("ascii")
+    subject_header = f"=?utf-8?B?{subject_encoded}?="
+
     domain = smtp_user.split("@")[-1] if "@" in smtp_user else "localhost"
     ts = datetime.now().strftime("%Y%m%d%H%M%S%f")
     boundary = f"==digest_{ts}=="
@@ -201,7 +205,7 @@ def send_email(html_content, text_content, subject=None):
     raw = (
         f"From: {smtp_user}\r\n"
         f"To: {email_to}\r\n"
-        f"Subject: {subject}\r\n"
+        f"Subject: {subject_header}\r\n"
         f"Date: {formatdate(localtime=True)}\r\n"
         f"Message-ID: <digest.{ts}@{domain}>\r\n"
         f"MIME-Version: 1.0\r\n"
