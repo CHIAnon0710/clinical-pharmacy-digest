@@ -8,11 +8,9 @@
 import os
 import sys
 import smtplib
-from email import charset as email_charset
 from email.header import Header
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from email.utils import formataddr
 from datetime import datetime
 from typing import Optional
 
@@ -224,11 +222,9 @@ def send_email(html_content: str, text_content: str,
     if subject is None:
         subject = f"[Clinical Pharm] Daily Digest — {today_str}"
 
-    # 使用 formataddr + Header 确保 RFC2047 兼容中文/特殊字符
-    msg = MIMEMultipart("alternative", _charset="utf-8")
-    msg["From"] = formataddr(
-        (str(Header(email_from_name, "utf-8")), smtp_user)
-    )
+    msg = MIMEMultipart("alternative")
+    # QQ邮箱SMTP对From头格式要求严格，先用纯邮箱地址确保兼容
+    msg["From"] = smtp_user
     msg["To"] = email_to
     msg["Subject"] = Header(subject, "utf-8")
 
