@@ -34,7 +34,7 @@ jobs:
       - name: 安装依赖
         run: |
           pip install --upgrade pip
-
+      
       - name: SMTP 纯连通性测试
         env:
             SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
